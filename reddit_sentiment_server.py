@@ -249,16 +249,13 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
 
 if __name__ == "__main__":
     import os
-    import uvicorn
     
     # Get the port from Render's environment
     port = int(os.environ.get("PORT", 8000))
     
-    # Try to run FastMCP server with uvicorn
-    try:
-        # This should keep the server running and bind to Render's port
-        uvicorn.run("reddit_sentiment_server:mcp", host="0.0.0.0", port=port)
-    except Exception as e:
-        print(f"Error starting server: {e}")
-        # Fallback: just run mcp directly
-        mcp.run()
+    # FastMCP servers need to run directly, not through uvicorn
+    # Set the port as an environment variable for FastMCP
+    os.environ["PORT"] = str(port)
+    
+    # Run the FastMCP server directly
+    mcp.run()
