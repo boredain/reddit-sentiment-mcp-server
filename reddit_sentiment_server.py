@@ -248,14 +248,10 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
     return full if return_full_data else create_summary(agg)
 
 if __name__ == "__main__":
+    import asyncio
     import os
     
-    # Get the port from Render's environment
     port = int(os.environ.get("PORT", 8000))
     
-    # FastMCP servers need to run directly, not through uvicorn
-    # Set the port as an environment variable for FastMCP
-    os.environ["PORT"] = str(port)
-    
-    # Run the FastMCP server directly
-    mcp.run()
+    # Run FastMCP server with asyncio
+    asyncio.run(mcp.run())
