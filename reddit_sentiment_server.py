@@ -248,4 +248,5 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
     return full if return_full_data else create_summary(agg)
 
 if __name__ == "__main__":
-    asyncio.run(mcp.run())
+    # asyncio.run(mcp.run()
+    mcp.run()
