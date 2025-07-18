@@ -248,10 +248,15 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
     return full if return_full_data else create_summary(agg)
 
 if __name__ == "__main__":
-    import asyncio
     import os
     
+    # Get the port from Render's environment
     port = int(os.environ.get("PORT", 8000))
     
-    # Run FastMCP server with asyncio
-    asyncio.run(mcp.run())
+    # Use HTTP transport for web deployment (recommended by FastMCP)
+    mcp.run(
+        transport="http",  # or "streamable-http" 
+        host="0.0.0.0",   # Bind to all interfaces for Render
+        port=port,        # Use Render's assigned port
+        path="/mcp"       # Default MCP endpoint path
+    )
