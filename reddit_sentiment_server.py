@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from mcp.server.fastmcp import FastMCP
 from asyncio import TimeoutError, wait_for
 
-mcp = FastMCP("reddit-sentiment-analyzer")
+mcp = FastMCP("reddit-sentiment-analyzer", port=8001)
 
 # Note: Replace with your actual credentials or use environment variables
 REDDIT_CLIENT_ID = "YOUR_REDDIT_CLIENT_ID"
