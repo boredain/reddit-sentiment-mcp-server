@@ -250,4 +250,4 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
 if __name__ == "__main__":
     # FastMCP automatically uses PORT environment variable for HTTP transport
     # No need to manually specify host/port
-    mcp.run()
+    mcp.run(transport='sse')
