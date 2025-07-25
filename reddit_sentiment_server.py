@@ -12,12 +12,24 @@ from mcp.server.fastmcp import FastMCP
 from asyncio import TimeoutError, wait_for
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 # from fastapi.middleware.cors import CORSMiddleware
 
 # Get port from environment variable (Render sets this automatically)
 port = int(os.environ.get("PORT", 8001))
 
 mcp = FastMCP("reddit-sentiment-analyzer", port=port)
+
+# Create a FastAPI app for Render
+app = FastAPI()
+
+@app.get("/")
+async def health_check():
+    return {"status": "healthy", "service": "reddit-sentiment-mcp"}
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 # Add CORS middleware for web access
 # mcp.add_middleware(
@@ -317,9 +329,13 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
 #     logging.info(f"Starting MCP server on port {port} with Streamable HTTP transport")
 #     mcp.run(transport='sse')
 
+# if __name__ == "__main__":
+#     # Run the MCP server with HTTP transport for Render compatibility
+#     logging.info(f"Starting MCP server on port {port}")
+#     mcp.run()
+
 if __name__ == "__main__":
-    # Run the MCP server with HTTP transport for Render compatibility
-    logging.info(f"Starting MCP server on port {port}")
-    mcp.run()
+    # Run as a web server for Render
+    uvicorn.run(app, host="0.0.0.0", port=port)
     
     
