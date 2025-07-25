@@ -318,8 +318,8 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
 #     mcp.run(transport='sse')
 
 if __name__ == "__main__":
-    # Use uvicorn to run the FastAPI app directly
+    # Run the MCP server with HTTP transport for Render compatibility
     logging.info(f"Starting MCP server on port {port}")
-    uvicorn.run(mcp.app, host="0.0.0.0", port=port)
+    mcp.run(host="0.0.0.0", port=port, transport='http')
     
     
