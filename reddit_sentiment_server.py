@@ -5,6 +5,7 @@ import anthropic
 import asyncpraw
 import asyncio
 import httpx
+import uvicorn
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from mcp.server.fastmcp import FastMCP
@@ -312,11 +313,13 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
 
     return full if return_full_data else create_summary(agg)
 
+# if __name__ == "__main__":
+#     logging.info(f"Starting MCP server on port {port} with Streamable HTTP transport")
+#     mcp.run(transport='sse')
+
 if __name__ == "__main__":
-    # Use streamable HTTP transport (recommended) instead of deprecated SSE
-    logging.info(f"Starting MCP server on port {port} with Streamable HTTP transport")
-    # mcp.host = "0.0.0.0"
-    mcp.run(transport='sse')
+    # Use uvicorn to run the FastAPI app directly
+    logging.info(f"Starting MCP server on port {port}")
+    uvicorn.run(mcp.app, host="0.0.0.0", port=port)
     
-    # mcp.run(host="0.0.0.0", port=port, transport='http')  
-    # Changed from 'sse' to 'http'
+    
