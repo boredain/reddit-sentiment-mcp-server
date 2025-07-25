@@ -3,3 +3,4 @@ asyncpraw
 anthropic
 httpx
 fastapi
+uvicorn
