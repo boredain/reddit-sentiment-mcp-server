@@ -2,3 +2,4 @@ fastmcp
 asyncpraw
 anthropic
 httpx
+fastapi
