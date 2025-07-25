@@ -6,4 +6,20 @@ services:
     startCommand: python reddit_sentiment_server.py
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.12
+        value: 3.11.11
+      - key: REDDIT_CLIENT_ID
+        sync: false  # You'll set this manually in Render dashboard
+      - key: REDDIT_CLIENT_SECRET
+        sync: false  # You'll set this manually in Render dashboard  
+      - key: REDDIT_USER_AGENT
+        value: RedditSentimentBot/1.0 by YourUsername
+      - key: ANTHROPIC_API_KEY
+        sync: false  # You'll set this manually in Render dashboard
+    healthCheckPath: /
+    headers:
+      - key: Access-Control-Allow-Origin
+        value: "*"
+      - key: Access-Control-Allow-Methods
+        value: "GET, POST, OPTIONS"
+      - key: Access-Control-Allow-Headers
+        value: "Content-Type, Authorization, Mcp-Session-Id"
