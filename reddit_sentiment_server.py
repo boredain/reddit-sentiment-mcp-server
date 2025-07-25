@@ -11,7 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from asyncio import TimeoutError, wait_for
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
+# from fastapi.middleware.cors import CORSMiddleware
 
 # Get port from environment variable (Render sets this automatically)
 port = int(os.environ.get("PORT", 8001))
@@ -19,13 +19,13 @@ port = int(os.environ.get("PORT", 8001))
 mcp = FastMCP("reddit-sentiment-analyzer", port=port)
 
 # Add CORS middleware for web access
-mcp.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure more restrictively in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# mcp.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # Configure more restrictively in production
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # Use environment variables for credentials
 REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "")
