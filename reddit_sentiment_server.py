@@ -315,6 +315,7 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
 if __name__ == "__main__":
     # Use streamable HTTP transport (recommended) instead of deprecated SSE
     logging.info(f"Starting MCP server on port {port} with Streamable HTTP transport")
-    mcp.run()
+    mcp.run(transport='sse')
+    
     # mcp.run(host="0.0.0.0", port=port, transport='http')  
     # Changed from 'sse' to 'http'
