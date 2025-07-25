@@ -320,6 +320,6 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
 if __name__ == "__main__":
     # Run the MCP server with HTTP transport for Render compatibility
     logging.info(f"Starting MCP server on port {port}")
-    mcp.run(transport='http')
+    mcp.run()
     
     
