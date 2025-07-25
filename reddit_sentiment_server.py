@@ -1,5 +1,6 @@
 import logging
 import json
+import os
 import anthropic
 import asyncpraw
 import asyncio
@@ -8,14 +9,41 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from mcp.server.fastmcp import FastMCP
 from asyncio import TimeoutError, wait_for
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
-mcp = FastMCP("reddit-sentiment-analyzer", port=8001)
+# Get port from environment variable (Render sets this automatically)
+port = int(os.environ.get("PORT", 8001))
 
-# Note: Replace with your actual credentials or use environment variables
-REDDIT_CLIENT_ID = "YOUR_REDDIT_CLIENT_ID"
-REDDIT_CLIENT_SECRET = "YOUR_REDDIT_CLIENT_SECRET"
-REDDIT_USER_AGENT = "SentimentBot/1.0 by YOUR_USERNAME"
-ANTHROPIC_API_KEY = "YOUR_ANTHROPIC_API_KEY"
+mcp = FastMCP("reddit-sentiment-analyzer", port=port)
+
+# Add CORS middleware for web access
+mcp.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure more restrictively in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Use environment variables for credentials
+REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
+REDDIT_USER_AGENT = os.environ.get("REDDIT_USER_AGENT", "SentimentBot/1.0")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# Validate required environment variables
+required_vars = {
+    "REDDIT_CLIENT_ID": REDDIT_CLIENT_ID,
+    "REDDIT_CLIENT_SECRET": REDDIT_CLIENT_SECRET,
+    "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY
+}
+
+missing_vars = [var for var, value in required_vars.items() if not value]
+if missing_vars:
+    logging.warning(f"Missing environment variables: {', '.join(missing_vars)}")
+    logging.warning("Server will start but functionality may be limited without proper credentials")
 
 @dataclass
 class ClaudeSentimentResult:
@@ -30,7 +58,33 @@ class ClaudeSentimentResult:
     urgency_level: str
     business_impact: str
 
+# Health check endpoints
+@mcp.get("/")
+async def health_check():
+    """Health check endpoint for deployment platforms like Render"""
+    return JSONResponse(
+        content={
+            "status": "healthy",
+            "service": "reddit-sentiment-analyzer",
+            "version": "1.0",
+            "transport": "streamable-http",
+            "endpoints": {
+                "health": "/",
+                "mcp": "/mcp",
+                "docs": "/docs"
+            }
+        }
+    )
+
+@mcp.get("/health")
+async def health_check_alt():
+    """Alternative health check endpoint"""
+    return JSONResponse(content={"status": "ok"})
+
 async def setup_reddit_client():
+    if not REDDIT_CLIENT_ID or not REDDIT_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="Reddit credentials not configured")
+    
     reddit = asyncpraw.Reddit(
         client_id=REDDIT_CLIENT_ID,
         client_secret=REDDIT_CLIENT_SECRET,
@@ -59,6 +113,11 @@ def analyze_sentiment_simple(text: str) -> Tuple[float, str]:
     return score, label
 
 async def analyze_sentiment_with_claude_batch(posts: List[str], product_context: str = "") -> List[ClaudeSentimentResult]:
+    if not ANTHROPIC_API_KEY:
+        # Fallback to simple analysis if no API key
+        logging.warning("No Anthropic API key configured, falling back to simple sentiment analysis")
+        return [ClaudeSentimentResult(*analyze_sentiment_simple(post), 0.5, "simple fallback", [], [], [], "unknown", "medium", "medium") for post in posts]
+    
     prompt = f"""
     You are a product analyst. Analyze the sentiment of each Reddit post below.
     Product context: {product_context if product_context else "(none)"}
@@ -84,38 +143,44 @@ async def analyze_sentiment_with_claude_batch(posts: List[str], product_context:
     {json.dumps(posts)}
     """
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            url="https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-3-5-sonnet-20241022",
-                "temperature": 0.1,
-                "max_tokens": 1500,
-                "messages": [{"role": "user", "content": prompt}]
-            }
-        )
-        text = response.json()["content"][0]["text"]
-        json_start = text.find("[")
-        json_end = text.rfind("]") + 1
-        parsed = json.loads(text[json_start:json_end])
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url="https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-3-5-sonnet-20241022",
+                    "temperature": 0.1,
+                    "max_tokens": 1500,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+            )
+            response.raise_for_status()
+            text = response.json()["content"][0]["text"]
+            json_start = text.find("[")
+            json_end = text.rfind("]") + 1
+            parsed = json.loads(text[json_start:json_end])
 
-        return [ClaudeSentimentResult(
-            sentiment_score=p.get("score", 0.0),
-            sentiment_label=p.get("label", "neutral"),
-            confidence=p.get("confidence", 0.5),
-            reasoning=p.get("reasoning", ""),
-            key_themes=p.get("primary_themes", []),
-            pain_points=p.get("pain_points", []),
-            feature_requests=p.get("feature_requests", []),
-            customer_intent=p.get("customer_intent", "unknown"),
-            urgency_level=p.get("urgency_level", "medium"),
-            business_impact=p.get("business_impact", "medium")
-        ) for p in parsed]
+            return [ClaudeSentimentResult(
+                sentiment_score=p.get("score", 0.0),
+                sentiment_label=p.get("label", "neutral"),
+                confidence=p.get("confidence", 0.5),
+                reasoning=p.get("reasoning", ""),
+                key_themes=p.get("primary_themes", []),
+                pain_points=p.get("pain_points", []),
+                feature_requests=p.get("feature_requests", []),
+                customer_intent=p.get("customer_intent", "unknown"),
+                urgency_level=p.get("urgency_level", "medium"),
+                business_impact=p.get("business_impact", "medium")
+            ) for p in parsed]
+    except Exception as e:
+        logging.error(f"Claude API error: {e}")
+        # Fallback to simple analysis on API error
+        return [ClaudeSentimentResult(*analyze_sentiment_simple(post), 0.5, f"API error fallback: {str(e)}", [], [], [], "unknown", "medium", "medium") for post in posts]
 
 def aggregate_claude_results(results: List[ClaudeSentimentResult]) -> Dict:
     sentiment_counts = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
@@ -248,6 +313,6 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
     return full if return_full_data else create_summary(agg)
 
 if __name__ == "__main__":
-    # FastMCP automatically uses PORT environment variable for HTTP transport
-    # No need to manually specify host/port
-    mcp.run(transport='sse')
+    # Use streamable HTTP transport (recommended) instead of deprecated SSE
+    logging.info(f"Starting MCP server on port {port} with Streamable HTTP transport")
+    mcp.run(host="0.0.0.0", port=port, transport='http')  # Changed from 'sse' to 'http'
