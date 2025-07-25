@@ -59,27 +59,27 @@ class ClaudeSentimentResult:
     business_impact: str
 
 # Health check endpoints
-@mcp.get("/")
-async def health_check():
-    """Health check endpoint for deployment platforms like Render"""
-    return JSONResponse(
-        content={
-            "status": "healthy",
-            "service": "reddit-sentiment-analyzer",
-            "version": "1.0",
-            "transport": "streamable-http",
-            "endpoints": {
-                "health": "/",
-                "mcp": "/mcp",
-                "docs": "/docs"
-            }
-        }
-    )
+# @mcp.get("/")
+# async def health_check():
+#     """Health check endpoint for deployment platforms like Render"""
+#     return JSONResponse(
+#         content={
+#             "status": "healthy",
+#             "service": "reddit-sentiment-analyzer",
+#             "version": "1.0",
+#             "transport": "streamable-http",
+#             "endpoints": {
+#                 "health": "/",
+#                 "mcp": "/mcp",
+#                 "docs": "/docs"
+#             }
+#         }
+#     )
 
-@mcp.get("/health")
-async def health_check_alt():
-    """Alternative health check endpoint"""
-    return JSONResponse(content={"status": "ok"})
+# @mcp.get("/health")
+# async def health_check_alt():
+#     """Alternative health check endpoint"""
+#     return JSONResponse(content={"status": "ok"})
 
 async def setup_reddit_client():
     if not REDDIT_CLIENT_ID or not REDDIT_CLIENT_SECRET:
