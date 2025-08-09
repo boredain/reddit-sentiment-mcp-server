@@ -5,40 +5,22 @@ import anthropic
 import asyncpraw
 import asyncio
 import httpx
-import uvicorn
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from asyncio import TimeoutError, wait_for
-from fastapi import HTTPException
-from fastapi.responses import JSONResponse
-from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 # Get port from environment variable (Render sets this automatically)
-port = int(os.environ.get("PORT", 8001))
+port = int(os.environ.get("PORT", 8000))
 
-mcp = FastMCP("reddit-sentiment-analyzer", port=port)
-
-# Create a FastAPI app for Render
-app = FastAPI()
-
-@app.get("/")
-async def health_check():
-    return {"status": "healthy", "service": "reddit-sentiment-mcp"}
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-# Add CORS middleware for web access
-# mcp.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],  # Configure more restrictively in production
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
+# Initialize MCP server with proper configuration
+mcp = FastMCP(
+    "reddit-sentiment-analyzer",
+    transport="http"  # Use HTTP transport for Copilot Studio
+)
 
 # Use environment variables for credentials
 REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "")
@@ -71,32 +53,10 @@ class ClaudeSentimentResult:
     urgency_level: str
     business_impact: str
 
-# Health check endpoints
-# @mcp.get("/")
-# async def health_check():
-#     """Health check endpoint for deployment platforms like Render"""
-#     return JSONResponse(
-#         content={
-#             "status": "healthy",
-#             "service": "reddit-sentiment-analyzer",
-#             "version": "1.0",
-#             "transport": "streamable-http",
-#             "endpoints": {
-#                 "health": "/",
-#                 "mcp": "/mcp",
-#                 "docs": "/docs"
-#             }
-#         }
-#     )
-
-# @mcp.get("/health")
-# async def health_check_alt():
-#     """Alternative health check endpoint"""
-#     return JSONResponse(content={"status": "ok"})
-
 async def setup_reddit_client():
+    """Initialize Reddit client with credentials"""
     if not REDDIT_CLIENT_ID or not REDDIT_CLIENT_SECRET:
-        raise HTTPException(status_code=500, detail="Reddit credentials not configured")
+        raise Exception("Reddit credentials not configured")
     
     reddit = asyncpraw.Reddit(
         client_id=REDDIT_CLIENT_ID,
@@ -107,29 +67,40 @@ async def setup_reddit_client():
     return reddit
 
 def analyze_sentiment_simple(text: str) -> Tuple[float, str]:
-    positive_words = ['love', 'amazing', 'great', 'excellent', 'fantastic', 'wonderful', 'perfect', 'awesome', 'brilliant', 'outstanding', 'helpful', 'useful']
-    negative_words = ['hate', 'terrible', 'awful', 'horrible', 'bad', 'poor', 'useless', 'frustrating', 'annoying', 'disappointed', 'broken', 'crash']
+    """Simple rule-based sentiment analysis fallback"""
+    positive_words = ['love', 'amazing', 'great', 'excellent', 'fantastic', 'wonderful', 
+                     'perfect', 'awesome', 'brilliant', 'outstanding', 'helpful', 'useful']
+    negative_words = ['hate', 'terrible', 'awful', 'horrible', 'bad', 'poor', 'useless', 
+                      'frustrating', 'annoying', 'disappointed', 'broken', 'crash']
+    
     text_lower = text.lower()
     positive_count = sum(1 for word in positive_words if word in text_lower)
     negative_count = sum(1 for word in negative_words if word in text_lower)
     total_words = len(text_lower.split())
+    
     if total_words == 0:
         return 0.0, "neutral"
+    
     score = (positive_count - negative_count) / max(total_words * 0.1, 1)
     score = max(-1, min(1, score))
+    
     if score > 0.1:
         label = "positive"
     elif score < -0.1:
         label = "negative"
     else:
         label = "neutral"
+    
     return score, label
 
 async def analyze_sentiment_with_claude_batch(posts: List[str], product_context: str = "") -> List[ClaudeSentimentResult]:
+    """Analyze sentiment using Claude AI"""
     if not ANTHROPIC_API_KEY:
-        # Fallback to simple analysis if no API key
         logging.warning("No Anthropic API key configured, falling back to simple sentiment analysis")
-        return [ClaudeSentimentResult(*analyze_sentiment_simple(post), 0.5, "simple fallback", [], [], [], "unknown", "medium", "medium") for post in posts]
+        return [ClaudeSentimentResult(
+            *analyze_sentiment_simple(post), 0.5, "simple fallback", 
+            [], [], [], "unknown", "medium", "medium"
+        ) for post in posts]
     
     prompt = f"""
     You are a product analyst. Analyze the sentiment of each Reddit post below.
@@ -192,13 +163,17 @@ async def analyze_sentiment_with_claude_batch(posts: List[str], product_context:
             ) for p in parsed]
     except Exception as e:
         logging.error(f"Claude API error: {e}")
-        # Fallback to simple analysis on API error
-        return [ClaudeSentimentResult(*analyze_sentiment_simple(post), 0.5, f"API error fallback: {str(e)}", [], [], [], "unknown", "medium", "medium") for post in posts]
+        return [ClaudeSentimentResult(
+            *analyze_sentiment_simple(post), 0.5, f"API error fallback: {str(e)}", 
+            [], [], [], "unknown", "medium", "medium"
+        ) for post in posts]
 
 def aggregate_claude_results(results: List[ClaudeSentimentResult]) -> Dict:
+    """Aggregate individual sentiment results into business insights"""
     sentiment_counts = {"positive": 0, "negative": 0, "neutral": 0, "mixed": 0}
     total_sentiment_score = 0
     high_confidence_results = [r for r in results if r.confidence > 0.7]
+    
     for result in high_confidence_results:
         label = result.sentiment_label.lower()
         if label in sentiment_counts:
@@ -211,13 +186,16 @@ def aggregate_claude_results(results: List[ClaudeSentimentResult]) -> Dict:
             else:
                 sentiment_counts["neutral"] += 1
         total_sentiment_score += result.sentiment_score
+    
     all_themes = [theme for r in high_confidence_results for theme in r.key_themes]
     theme_frequency = {theme: all_themes.count(theme) for theme in set(all_themes)}
     top_themes = sorted(theme_frequency.items(), key=lambda x: x[1], reverse=True)[:10]
+    
     all_pain_points = [pt for r in high_confidence_results for pt in r.pain_points][:20]
     all_feature_requests = [fr for r in high_confidence_results for fr in r.feature_requests][:20]
     urgent_issues = [r for r in high_confidence_results if r.urgency_level == "high"]
     high_impact_feedback = [r for r in high_confidence_results if r.business_impact == "high"]
+    
     return {
         "analysis_summary": {
             "total_posts_analyzed": len(results),
@@ -235,10 +213,15 @@ def aggregate_claude_results(results: List[ClaudeSentimentResult]) -> Dict:
     }
 
 def create_summary(results: Dict) -> Dict:
+    """Create executive summary from aggregated results"""
     total_posts = results.get("total_posts", 0)
     sentiment_dist = results.get("sentiment_distribution", {})
-    sentiment_percentages = {k: f"{(v / total_posts) * 100:.1f}%" for k, v in sentiment_dist.items()} if total_posts else {}
+    sentiment_percentages = {
+        k: f"{(v / total_posts) * 100:.1f}%" 
+        for k, v in sentiment_dist.items()
+    } if total_posts else {}
     insights = results.get("customer_insights", {})
+    
     return {
         "overview": {
             "total_posts_analyzed": total_posts,
@@ -262,7 +245,7 @@ def create_summary(results: Dict) -> Dict:
     }
 
 @mcp.tool()
-async def safe_analyze_reddit_sentiment(
+async def analyze_reddit_sentiment(
     query: str,
     subreddits: Optional[List[str]] = None,
     time_filter: str = "week",
@@ -274,27 +257,59 @@ async def safe_analyze_reddit_sentiment(
     """
     Analyze Reddit sentiment for a given query across specified subreddits.
     
+    This tool provides enterprise-grade sentiment analysis with business intelligence
+    extraction including pain points, feature requests, and urgency assessment.
+    
     Args:
-        query: Search term to analyze
-        subreddits: List of subreddit names (default: ["all"])
-        time_filter: Time period ("hour", "day", "week", "month", "year", "all")
-        limit: Maximum posts per subreddit
+        query: Search term to analyze (e.g., product name, brand, topic)
+        subreddits: List of subreddit names to search (default: ["all"])
+        time_filter: Time period - "hour", "day", "week", "month", "year", or "all"
+        limit: Maximum posts per subreddit (1-25, default: 5)
         use_claude: Use Claude AI for advanced analysis (default: True)
-        product_context: Additional context about the product being analyzed
+        product_context: Additional business context for better analysis
         return_full_data: Return detailed post-level data (default: False)
     
     Returns:
-        Dictionary containing sentiment analysis results
+        Dictionary containing:
+        - Sentiment distribution and percentages
+        - Key themes and insights
+        - Business metrics (urgent issues, high-impact items)
+        - Pain points and feature requests
     """
     try:
-        return await wait_for(
-            analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_claude, product_context, return_full_data),
+        # Validate inputs
+        if not query:
+            return {"error": "Query parameter is required"}
+        
+        if limit < 1 or limit > 25:
+            return {"error": "Limit must be between 1 and 25"}
+        
+        # Execute with timeout protection
+        result = await wait_for(
+            _analyze_reddit_sentiment_internal(
+                query, subreddits, time_filter, limit, 
+                use_claude, product_context, return_full_data
+            ),
             timeout=55
         )
+        return result
     except TimeoutError:
-        return {"error": "The tool took too long. Try reducing the number of posts or subreddits."}
+        return {
+            "error": "Analysis timed out. Try reducing the number of posts or subreddits.",
+            "suggestion": "Consider using limit=3 or fewer subreddits for faster results"
+        }
+    except Exception as e:
+        logging.error(f"Error in analyze_reddit_sentiment: {e}")
+        return {
+            "error": f"An error occurred: {str(e)}",
+            "suggestion": "Please check your parameters and try again"
+        }
 
-async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_claude, product_context, return_full_data):
+async def _analyze_reddit_sentiment_internal(
+    query, subreddits, time_filter, limit, 
+    use_claude, product_context, return_full_data
+):
+    """Internal implementation of sentiment analysis"""
     reddit = await setup_reddit_client()
     all_posts = []
     post_texts = []
@@ -302,40 +317,86 @@ async def analyze_reddit_sentiment(query, subreddits, time_filter, limit, use_cl
     if subreddits is None:
         subreddits = ["all"]
 
+    # Collect posts from each subreddit
     for sr in subreddits:
-        subreddit = await reddit.subreddit(sr)
-        async for post in subreddit.search(query, sort="relevance", time_filter=time_filter, limit=limit):
-            if post.selftext in ['[removed]', '[deleted]'] or post.author is None:
-                continue
-            text = f"{post.title} {post.selftext}"
-            all_posts.append({"id": post.id, "text": text, "meta": {
-                "author": str(post.author),
-                "subreddit": str(post.subreddit),
-                "url": f"https://reddit.com{post.permalink}"}})
-            post_texts.append(text)
+        try:
+            subreddit = await reddit.subreddit(sr)
+            async for post in subreddit.search(
+                query, sort="relevance", 
+                time_filter=time_filter, limit=limit
+            ):
+                if post.selftext in ['[removed]', '[deleted]'] or post.author is None:
+                    continue
+                
+                text = f"{post.title} {post.selftext}"
+                all_posts.append({
+                    "id": post.id, 
+                    "text": text, 
+                    "meta": {
+                        "author": str(post.author),
+                        "subreddit": str(post.subreddit),
+                        "url": f"https://reddit.com{post.permalink}"
+                    }
+                })
+                post_texts.append(text)
+        except Exception as e:
+            logging.warning(f"Error fetching from r/{sr}: {e}")
+            continue
 
+    if not all_posts:
+        return {
+            "error": "No posts found matching your query",
+            "suggestion": "Try different subreddits or a broader search term"
+        }
+
+    # Analyze sentiment
     if use_claude:
         results = await analyze_sentiment_with_claude_batch(post_texts, product_context)
     else:
-        results = [ClaudeSentimentResult(*analyze_sentiment_simple(p["text"]), 0.5, "simple fallback", [], [], [], "unknown", "medium", "medium") for p in all_posts]
+        results = [
+            ClaudeSentimentResult(
+                *analyze_sentiment_simple(p["text"]), 0.5, 
+                "simple fallback", [], [], [], 
+                "unknown", "medium", "medium"
+            ) for p in all_posts
+        ]
 
-    full = [vars(r) | p["meta"] | {"text": p["text"]} for r, p in zip(results, all_posts)]
-    agg = aggregate_claude_results(results)
-    agg["total_posts"] = len(results)
+    # Prepare response
+    if return_full_data:
+        full = [
+            {**vars(r), **p["meta"], "text": p["text"][:500] + "..." if len(p["text"]) > 500 else p["text"]} 
+            for r, p in zip(results, all_posts)
+        ]
+        return {"posts": full, "total": len(full)}
+    else:
+        agg = aggregate_claude_results(results)
+        agg["total_posts"] = len(results)
+        return create_summary(agg)
 
-    return full if return_full_data else create_summary(agg)
-
-# if __name__ == "__main__":
-#     logging.info(f"Starting MCP server on port {port} with Streamable HTTP transport")
-#     mcp.run(transport='sse')
-
-# if __name__ == "__main__":
-#     # Run the MCP server with HTTP transport for Render compatibility
-#     logging.info(f"Starting MCP server on port {port}")
-#     mcp.run()
+# Health check endpoint for Render
+@mcp.get("/health")
+async def health_check():
+    """Health check endpoint for deployment monitoring"""
+    return {
+        "status": "healthy",
+        "service": "reddit-sentiment-mcp",
+        "version": "1.0.0",
+        "transport": "http",
+        "tools": ["analyze_reddit_sentiment"]
+    }
 
 if __name__ == "__main__":
-    # Run as a web server for Render
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Run the MCP server with HTTP transport
+    import uvicorn
     
+    logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
+    logging.info(f"MCP endpoint will be available at http://0.0.0.0:{port}/mcp")
+    logging.info(f"Health check available at http://0.0.0.0:{port}/health")
     
+    # Run with MCP HTTP transport for Copilot Studio compatibility
+    uvicorn.run(
+        mcp.get_app(),  # Get the FastAPI app from MCP
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
