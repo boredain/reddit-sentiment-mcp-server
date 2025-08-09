@@ -18,9 +18,7 @@ port = int(os.environ.get("PORT", 8000))
 
 # Initialize MCP server with proper configuration
 mcp = FastMCP(
-    "reddit-sentiment-analyzer",
-    transport="http"  # Use HTTP transport for Copilot Studio
-)
+    "reddit-sentiment-analyzer")
 
 # Use environment variables for credentials
 REDDIT_CLIENT_ID = os.environ.get("REDDIT_CLIENT_ID", "")
@@ -386,17 +384,13 @@ async def health_check():
     }
 
 if __name__ == "__main__":
-    # Run the MCP server with HTTP transport
-    import uvicorn
-    
     logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
     logging.info(f"MCP endpoint will be available at http://0.0.0.0:{port}/mcp")
-    logging.info(f"Health check available at http://0.0.0.0:{port}/health")
     
-    # Run with MCP HTTP transport for Copilot Studio compatibility
-    uvicorn.run(
-        mcp.get_app(),  # Get the FastAPI app from MCP
-        host="0.0.0.0",
+    # Use HTTP transport for Copilot Studio compatibility
+    mcp.run(
+        transport="http",  # ✅ This is supported!
+        host="0.0.0.0", 
         port=port,
-        log_level="info"
+        path="/mcp"  # Optional: customize the endpoint path
     )
