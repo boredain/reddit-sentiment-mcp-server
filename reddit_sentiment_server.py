@@ -371,17 +371,15 @@ async def _analyze_reddit_sentiment_internal(
         agg["total_posts"] = len(results)
         return create_summary(agg)
 
-# Health check endpoint for Render
-# @mcp.get("/health")
-# async def health_check():
-#     """Health check endpoint for deployment monitoring"""
-#     return {
-#         "status": "healthy",
-#         "service": "reddit-sentiment-mcp",
-#         "version": "1.0.0",
-#         "transport": "http",
-#         "tools": ["analyze_reddit_sentiment"]
-#     }
+@mcp.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "reddit-sentiment-mcp",
+        "version": "1.0.0",
+        "transport": "http",
+        "tools": ["analyze_reddit_sentiment"]
+    }
 
 if __name__ == "__main__":
     logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
