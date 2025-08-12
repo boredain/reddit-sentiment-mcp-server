@@ -7,7 +7,7 @@ import asyncio
 import httpx
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from asyncio import TimeoutError, wait_for
 
 # Configure logging
@@ -252,6 +252,8 @@ async def analyze_reddit_sentiment(
     product_context: str = "",
     return_full_data: bool = False
 ) -> Dict:
+
+    await asyncio.sleep(2)
     """
     Analyze Reddit sentiment for a given query across specified subreddits.
     
@@ -371,82 +373,13 @@ async def _analyze_reddit_sentiment_internal(
         agg["total_posts"] = len(results)
         return create_summary(agg)
 
-# @mcp.get("/health")
-# async def health_check():
-#     return {
-#         "status": "healthy",
-#         "service": "reddit-sentiment-mcp",
-#         "version": "1.0.0",
-#         "transport": "http",
-#         "tools": ["analyze_reddit_sentiment"]
-#     }
-
-
-# import asyncio, os, logging
-# logging.basicConfig(level=logging.INFO)
-
-async def main():
-    port = int(os.getenv("PORT", "10000"))
-    host, path = "0.0.0.0", "/mcp"
-
-    # Prefer async transport when available
-    if hasattr(mcp, "run_async"):
-        logging.info("Launching FastMCP via run_async (streamable-http)")
-        await mcp.run_async(
-            transport="streamable-http",
-            host=host,
-            port=port,
-            path=path,
-        )
-    elif hasattr(mcp, "run_sse"):
-        logging.info("Launching FastMCP via run_sse (SSE)")
-        mcp.run_sse(host=host, port=port)
-    elif hasattr(mcp, "run"):
-        logging.info("Launching FastMCP via run(..., transport='sse')")
-        mcp.run(transport="sse", host=host, port=port)
-    else:
-        raise RuntimeError("FastMCP lacks run_async/run_sse/run — check your import/version")
-
 if __name__ == "__main__":
-    asyncio.run(main())
-
-
-# if __name__ == "__main__":
-#     logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
-#     logging.info(f"MCP endpoint will be available at http://0.0.0.0:{port}/mcp")
-
-#     # Use the async runner; it accepts transport kwargs in current releases
-#     asyncio.run(
-#         mcp.run_async(
-#             transport="http",   # use "sse" if your client expects SSE
-#             host="0.0.0.0",
-#             port=port,
-#             path="/mcp",
-#             log_level="info",
-#         )
-#     )
-
-# if __name__ == "__main__":
-#     logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
-#     logging.info(f"MCP endpoint will be available at http://0.0.0.0:{port}/mcp")
-
-#     asyncio.run(
-#         mcp.run_http_async(
-#             host="0.0.0.0",
-#             port=port,
-#             path="/mcp",
-#             log_level="info"
-#         )
-#     )
-
-    
-    # Use HTTP transport for Copilot Studio compatibility
-    # mcp.run(
-    #     transport="http",  # ✅ This is supported!
-    #     host="0.0.0.0", 
-    #     port=port,
-    #     path="/mcp"  # Optional: customize the endpoint path
-    # )
+    mcp.run(
+        transport="http",  # ✅ This is supported!
+        host="0.0.0.0", 
+        port=port,
+        path="/mcp"  # Optional: customize the endpoint path
+    )
 
 
 
