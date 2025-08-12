@@ -384,11 +384,23 @@ async def _analyze_reddit_sentiment_internal(
 if __name__ == "__main__":
     logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
     logging.info(f"MCP endpoint will be available at http://0.0.0.0:{port}/mcp")
+
+    asyncio.run(
+        mcp.run_http_async(
+            host="0.0.0.0",
+            port=port,
+            path="/mcp",
+            log_level="info"
+        )
+    )
+
     
     # Use HTTP transport for Copilot Studio compatibility
-    mcp.run(
-        transport="http",  # ✅ This is supported!
-        host="0.0.0.0", 
-        port=port,
-        path="/mcp"  # Optional: customize the endpoint path
-    )
+    # mcp.run(
+    #     transport="http",  # ✅ This is supported!
+    #     host="0.0.0.0", 
+    #     port=port,
+    #     path="/mcp"  # Optional: customize the endpoint path
+    # )
+
+
