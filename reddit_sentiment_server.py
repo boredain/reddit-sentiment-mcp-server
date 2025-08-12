@@ -378,7 +378,7 @@ if __name__ == "__main__":
         transport="http",  # ✅ This is supported!
         host="0.0.0.0", 
         port=port,
-        path="/mcp"  # Optional: customize the endpoint path
+        path="/mcp/"  # Keep trailing slash to match client requests and avoid redirects
     )
 
 
