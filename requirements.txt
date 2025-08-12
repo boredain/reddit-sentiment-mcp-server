@@ -1,15 +1,7 @@
-# FastAPI for HTTP server (required for Copilot Studio)
+mcp>=0.8.0
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
-
-# HTTP client for external APIs
-httpx>=0.25.0
-
-# Reddit API (optional - will use mock data if not available)
+httpx>=0.25.0  # This handles Anthropic API calls
 asyncpraw>=7.7.0
-
-# Data handling
 pydantic>=2.0.0
-
-# Logging and utilities
 python-multipart>=0.0.6
