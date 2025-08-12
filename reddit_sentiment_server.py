@@ -382,20 +382,49 @@ async def _analyze_reddit_sentiment_internal(
 #     }
 
 
-if __name__ == "__main__":
-    logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
-    logging.info(f"MCP endpoint will be available at http://0.0.0.0:{port}/mcp")
+# import asyncio, os, logging
+# logging.basicConfig(level=logging.INFO)
 
-    # Use the async runner; it accepts transport kwargs in current releases
-    asyncio.run(
-        mcp.run_async(
-            transport="http",   # use "sse" if your client expects SSE
-            host="0.0.0.0",
+async def main():
+    port = int(os.getenv("PORT", "10000"))
+    host, path = "0.0.0.0", "/mcp"
+
+    # Prefer async transport when available
+    if hasattr(mcp, "run_async"):
+        logging.info("Launching FastMCP via run_async (streamable-http)")
+        await mcp.run_async(
+            transport="streamable-http",
+            host=host,
             port=port,
-            path="/mcp",
-            log_level="info",
+            path=path,
         )
-    )
+    elif hasattr(mcp, "run_sse"):
+        logging.info("Launching FastMCP via run_sse (SSE)")
+        mcp.run_sse(host=host, port=port)
+    elif hasattr(mcp, "run"):
+        logging.info("Launching FastMCP via run(..., transport='sse')")
+        mcp.run(transport="sse", host=host, port=port)
+    else:
+        raise RuntimeError("FastMCP lacks run_async/run_sse/run — check your import/version")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+# if __name__ == "__main__":
+#     logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
+#     logging.info(f"MCP endpoint will be available at http://0.0.0.0:{port}/mcp")
+
+#     # Use the async runner; it accepts transport kwargs in current releases
+#     asyncio.run(
+#         mcp.run_async(
+#             transport="http",   # use "sse" if your client expects SSE
+#             host="0.0.0.0",
+#             port=port,
+#             path="/mcp",
+#             log_level="info",
+#         )
+#     )
 
 # if __name__ == "__main__":
 #     logging.info(f"Starting Reddit Sentiment MCP Server on port {port}")
@@ -418,5 +447,7 @@ if __name__ == "__main__":
     #     port=port,
     #     path="/mcp"  # Optional: customize the endpoint path
     # )
+
+
 
 
