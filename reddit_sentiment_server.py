@@ -7,7 +7,7 @@ import asyncio
 import httpx
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 from asyncio import TimeoutError, wait_for
 
 # Configure logging
