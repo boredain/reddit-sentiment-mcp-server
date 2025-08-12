@@ -375,7 +375,7 @@ async def _analyze_reddit_sentiment_internal(
 
 if __name__ == "__main__":
     mcp.run(
-        transport="http",  # ✅ This is supported!
+        transport="streamable_http",  # ✅ This is supported!
         host="0.0.0.0", 
         port=port,
         path="/mcp/"  # Keep trailing slash to match client requests and avoid redirects
