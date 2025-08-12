@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
-REAL MCP Server for Copilot Studio Integration
-Uses official MCP SDK with SSE transport + FastAPI wrapper
-
-This is a TRUE MCP server that can connect to Copilot Studio via custom connectors.
-Based on Microsoft's official documentation and examples.
+FIXED MCP Server for Copilot Studio
+Routes all JSON-RPC responses through SSE stream (not HTTP response body)
 """
 
 import asyncio
@@ -15,14 +12,16 @@ import uuid
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 import httpx
+import queue
+import threading
 
-# Official MCP imports - THIS MAKES IT A REAL MCP SERVER
+# Official MCP imports
 from mcp.server.models import InitializationOptions
 from mcp.server import NotificationOptions, Server
 import mcp.types as types
 
 # FastAPI for SSE transport wrapper
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 import uvicorn
@@ -40,6 +39,10 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 # Create the REAL MCP server instance
 mcp_server = Server("reddit-sentiment-analyzer")
 
+# CRITICAL: Session management for SSE streams
+active_sessions: Dict[str, asyncio.Queue] = {}
+session_lock = threading.Lock()
+
 @dataclass
 class SentimentResult:
     sentiment_score: float
@@ -56,10 +59,7 @@ class SentimentResult:
 
 @mcp_server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
-    """
-    REAL MCP: List available tools using official MCP types
-    This is what makes it a legitimate MCP server
-    """
+    """REAL MCP: List available tools using official MCP types"""
     return [
         types.Tool(
             name="analyze_reddit_sentiment",
@@ -103,10 +103,7 @@ async def handle_list_tools() -> list[types.Tool]:
 
 @mcp_server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> list[types.TextContent]:
-    """
-    REAL MCP: Handle tool calls using official MCP types
-    This is the official MCP way to execute tools
-    """
+    """REAL MCP: Handle tool calls using official MCP types"""
     if name != "analyze_reddit_sentiment":
         raise ValueError(f"Unknown tool: {name}")
     
@@ -146,7 +143,7 @@ async def handle_call_tool(name: str, arguments: dict) -> list[types.TextContent
         )]
 
 # ============================================================================
-# BUSINESS LOGIC (Sentiment Analysis Implementation)
+# BUSINESS LOGIC (Sentiment Analysis Implementation) 
 # ============================================================================
 
 def analyze_sentiment_simple(text: str) -> tuple[float, str]:
@@ -338,13 +335,13 @@ async def perform_sentiment_analysis(query: str, subreddits: List[str], time_fil
         }
 
 # ============================================================================
-# SSE TRANSPORT LAYER FOR COPILOT STUDIO
+# FIXED SSE TRANSPORT LAYER FOR COPILOT STUDIO
 # ============================================================================
 
 # FastAPI app for SSE transport
 app = FastAPI(
     title="Reddit Sentiment MCP Server",
-    description="Real MCP Server with SSE transport for Copilot Studio",
+    description="Real MCP Server with FIXED SSE transport for Copilot Studio",
     version="1.0.0"
 )
 
@@ -357,19 +354,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global session storage for SSE connections
-active_sessions: Dict[str, Dict] = {}
-
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {
         "service": "reddit-sentiment-mcp-server",
         "version": "1.0.0",
-        "transport": "sse",
+        "transport": "sse-fixed",
         "status": "ready",
         "endpoints": {
-            "mcp": "/mcp (SSE endpoint for Copilot Studio)",
+            "mcp": "/mcp (FIXED SSE endpoint for Copilot Studio)",
             "health": "/health"
         }
     }
@@ -380,29 +374,57 @@ async def health():
     return {"status": "healthy", "mcp_server": "ready"}
 
 @app.get("/mcp")
-async def mcp_sse_endpoint(request: Request):
+async def mcp_sse_endpoint(request: Request, response: Response):
     """
-    SSE endpoint for Copilot Studio MCP integration
-    This is the endpoint that Copilot Studio connects to
+    FIXED SSE endpoint for Copilot Studio MCP integration
+    Creates session and streams all MCP responses through SSE
     """
     session_id = str(uuid.uuid4())
-    logger.info(f"SSE connection established: {session_id}")
+    
+    # Set session cookie for POST correlation
+    response.set_cookie(
+        key="mcp_session",
+        value=session_id,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="none"
+    )
+    
+    # Create message queue for this session
+    message_queue = asyncio.Queue()
+    with session_lock:
+        active_sessions[session_id] = message_queue
+    
+    logger.info(f"SSE session created: {session_id}")
     
     async def event_stream():
         try:
-            # Send initial endpoint URL (required by Copilot Studio)
+            # Send initial endpoint URL
             base_url = str(request.url).replace("/mcp", "")
             message_endpoint = f"{base_url}/message"
             yield f"event: endpoint\ndata: {message_endpoint}\n\n"
             
-            # Keep connection alive
+            # Send periodic pings and process messages
+            ping_count = 0
             while True:
-                yield f"data: {json.dumps({'jsonrpc': '2.0', 'id': str(uuid.uuid4()), 'method': 'ping'})}\n\n"
-                await asyncio.sleep(30)  # Ping every 30 seconds
-                
+                try:
+                    # Check for queued messages (with timeout)
+                    message = await asyncio.wait_for(message_queue.get(), timeout=30)
+                    yield f"event: message\ndata: {json.dumps(message)}\n\n"
+                    logger.info(f"SSE: Sent message to session {session_id}")
+                except asyncio.TimeoutError:
+                    # Send ping to keep connection alive
+                    ping_count += 1
+                    yield f"event: ping\ndata: {json.dumps({'jsonrpc': '2.0', 'id': f'ping-{ping_count}', 'method': 'ping'})}\n\n"
+                    
         except Exception as e:
-            logger.error(f"SSE stream error: {e}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            logger.error(f"SSE stream error for session {session_id}: {e}")
+        finally:
+            # Clean up session
+            with session_lock:
+                active_sessions.pop(session_id, None)
+            logger.info(f"SSE session closed: {session_id}")
     
     return StreamingResponse(
         event_stream(),
@@ -410,122 +432,170 @@ async def mcp_sse_endpoint(request: Request):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
         }
     )
 
 @app.post("/message")
-async def mcp_message_endpoint(request: Request):
+async def mcp_message_endpoint(request: Request, mcp_session: str = Cookie(None)):
     """
-    Message endpoint for MCP JSON-RPC communication
-    This handles the actual MCP protocol messages
+    FIXED Message endpoint - routes all responses to SSE stream
+    This is the key fix: responses go to SSE, not HTTP body
     """
     try:
         request_data = await request.json()
-        logger.info(f"MCP message: {request_data.get('method', 'unknown')}")
+        method = request_data.get("method", "unknown")
+        request_id = request_data.get("id", "unknown")
         
-        # Route to real MCP server based on method
-        method = request_data.get("method")
+        logger.info(f"MCP request: method={method}, id={request_id}, session={mcp_session}")
+        
+        # Find the SSE session
+        message_queue = None
+        if mcp_session:
+            with session_lock:
+                message_queue = active_sessions.get(mcp_session)
+        
+        if not message_queue:
+            # Fallback: try to find any active session
+            with session_lock:
+                if active_sessions:
+                    message_queue = next(iter(active_sessions.values()))
+                    logger.warning(f"Using fallback session for request {request_id}")
+        
+        if not message_queue:
+            logger.error(f"No active SSE session found for request {request_id}")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "No active SSE session"}
+            )
+        
+        # Process the MCP request
         params = request_data.get("params", {})
-        request_id = request_data.get("id", 1)
         
-        if method == "initialize":
-            response = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {"listChanged": True}
-                    },
-                    "serverInfo": {
-                        "name": "reddit-sentiment-analyzer",
-                        "version": "1.0.0"
-                    }
-                }
-            }
-        
-        elif method == "tools/list":
-            tools = await handle_list_tools()
-            response = {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "tools": [
-                        {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "inputSchema": tool.inputSchema
-                        } for tool in tools
-                    ]
-                }
-            }
-        
-        elif method == "tools/call":
-            tool_name = params.get("name")
-            arguments = params.get("arguments", {})
-            
-            try:
-                content_list = await handle_call_tool(tool_name, arguments)
-                response = {
+        try:
+            if method == "initialize":
+                response_data = {
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "result": {
-                        "content": [
-                            {"type": item.type, "text": item.text}
-                            for item in content_list
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {
+                            "tools": {"listChanged": True}
+                        },
+                        "serverInfo": {
+                            "name": "reddit-sentiment-analyzer",
+                            "version": "1.0.0"
+                        }
+                    }
+                }
+            
+            elif method == "tools/list":
+                tools = await handle_list_tools()
+                response_data = {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "tools": [
+                            {
+                                "name": tool.name,
+                                "description": tool.description,
+                                "inputSchema": tool.inputSchema
+                            } for tool in tools
                         ]
                     }
                 }
-            except Exception as e:
-                response = {
+            
+            elif method == "tools/call":
+                tool_name = params.get("name")
+                arguments = params.get("arguments", {})
+                
+                if not tool_name:
+                    raise ValueError("Tool name is required")
+                
+                try:
+                    content_list = await asyncio.wait_for(
+                        handle_call_tool(tool_name, arguments),
+                        timeout=25.0
+                    )
+                    response_data = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": {
+                            "content": [
+                                {"type": item.type, "text": item.text}
+                                for item in content_list
+                            ]
+                        }
+                    }
+                except Exception as tool_error:
+                    logger.error(f"Tool execution error: {tool_error}")
+                    response_data = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32603,
+                            "message": f"Tool execution failed: {str(tool_error)}"
+                        }
+                    }
+            
+            else:
+                response_data = {
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "error": {
-                        "code": -32603,
-                        "message": str(e)
+                        "code": -32601,
+                        "message": f"Method not found: {method}"
                     }
                 }
-        
-        else:
-            response = {
+            
+            # CRITICAL FIX: Send response to SSE stream instead of HTTP response
+            await message_queue.put(response_data)
+            logger.info(f"Queued response for SSE stream: method={method}, id={request_id}")
+            
+            # Return minimal HTTP acknowledgment
+            return JSONResponse(content={"accepted": True, "id": request_id})
+            
+        except Exception as method_error:
+            logger.error(f"Method handling error for {method}: {method_error}")
+            error_response = {
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "error": {
-                    "code": -32601,
-                    "message": f"Method not found: {method}"
+                    "code": -32603,
+                    "message": f"Internal error: {str(method_error)}"
                 }
             }
+            await message_queue.put(error_response)
+            return JSONResponse(content={"accepted": True, "id": request_id})
         
-        return JSONResponse(content=response)
-        
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON in request")
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid JSON"}
+        )
     except Exception as e:
-        logger.error(f"Message endpoint error: {e}")
+        logger.error(f"Unexpected error in message endpoint: {e}")
         return JSONResponse(
             status_code=500,
-            content={
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {
-                    "code": -32603,
-                    "message": f"Internal error: {str(e)}"
-                }
-            }
+            content={"error": f"Internal server error: {str(e)}"}
         )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     
-    print("🚀 Starting REAL MCP Server for Copilot Studio")
+    print("🚀 Starting FIXED MCP Server for Copilot Studio")
     print(f"📍 Server: http://0.0.0.0:{port}")
-    print(f"🔗 SSE Endpoint: http://0.0.0.0:{port}/mcp")
+    print(f"🔗 FIXED SSE Endpoint: http://0.0.0.0:{port}/mcp")
     print(f"💬 Message Endpoint: http://0.0.0.0:{port}/message")
     print(f"❤️ Health Check: http://0.0.0.0:{port}/health")
     print()
+    print("🔧 KEY FIX: All MCP responses now route through SSE stream!")
     print("📋 MCP Server Details:")
     print("• Uses official MCP SDK (mcp.server)")
     print("• Implements real MCP protocol")
-    print("• SSE transport for Copilot Studio")
-    print("• Ready for custom connector integration")
+    print("• FIXED SSE transport for Copilot Studio")
+    print("• Routes all responses through SSE (not HTTP body)")
     
     if not REDDIT_CLIENT_ID:
         print("⚠️ Using mock data (set REDDIT_CLIENT_ID for real data)")
