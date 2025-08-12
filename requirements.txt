@@ -1,4 +1,4 @@
-fastmcp>=2.3.0
+mcp
 asyncpraw
 anthropic
 httpx
