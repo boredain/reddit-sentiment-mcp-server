@@ -600,6 +600,97 @@ async def mcp_message_endpoint(request: Request, mcp_session: str = Cookie(None)
         logger.error(f"Unexpected error in message endpoint: {e}")
         return JSONResponse(status_code=500, content={"error": f"Internal server error: {str(e)}"})
 
+@app.post("/mcp")
+async def mcp_streamable_endpoint(request: Request):
+    """
+    Streamable HTTP transport endpoint for Power Platform / Copilot Studio.
+    Internally reuses the existing /message MCP logic so all tools and methods stay in sync.
+    """
+    try:
+        # Parse incoming JSON-RPC request
+        request_data = await request.json()
+        method = request_data.get("method", "unknown")
+        request_id = request_data.get("id", "unknown")
+
+        logger.info(f"[Streamable] MCP request: method={method}, id={request_id}")
+
+        # Reuse existing /message handling logic directly
+        # We'll call the same code paths without SSE queuing
+        params = request_data.get("params", {})
+
+        if method == "initialize":
+            response_data = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {"listChanged": True}},
+                    "serverInfo": {
+                        "name": "reddit-sentiment-analyzer",
+                        "version": "1.0.0"
+                    }
+                }
+            }
+
+        elif method == "tools/list":
+            tools = await handle_list_tools()
+            response_data = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "inputSchema": t.inputSchema
+                        } for t in tools
+                    ]
+                }
+            }
+
+        elif method == "tools/call":
+            tool_name = params.get("name")
+            arguments = params.get("arguments", {})
+            content_list = await asyncio.wait_for(
+                handle_call_tool(tool_name, arguments),
+                timeout=25.0
+            )
+            response_data = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "content": [
+                        {"type": item.type, "text": item.text}
+                        for item in content_list
+                    ]
+                }
+            }
+
+        else:
+            response_data = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {
+                    "code": -32601,
+                    "message": f"Method not found: {method}"
+                }
+            }
+
+        return JSONResponse(content=response_data)
+
+    except Exception as e:
+        logger.exception("Error in /mcp streamable endpoint")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "jsonrpc": "2.0",
+                "id": request_data.get("id", None),
+                "error": {"code": -32603, "message": str(e)}
+            }
+        )
+
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
 
