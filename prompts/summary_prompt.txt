@@ -1,0 +1,90 @@
+You are analyzing user feedback about {query}. Below are detailed insights extracted from user discussions.
+
+Your task: Create 3-5 concise summary bullets for each category using this EXACT format:
+**Heading: Context**
+
+Where:
+- Heading = 2-3 word big-picture concept
+- Context = Specific details about the issue/feature
+- Total length = 9-12 words (including heading and context). Heading + Context must independently make sease
+to college graduates. Target 9-12 words but feel free to increase the number of words by a few count if 9-12 words structure
+don't make sense.
+
+FORMATTING RULES BY CATEGORY:
+
+**what_users_like**: Feature name: Benefit and user experience (features/aspects of the product/user experiences
+users enjoy)
+- Format: "Heading: Context"
+- ✅ CORRECT: "Flexible scheduling: Drivers choose hours and reject unwanted rides"
+- ✅ CORRECT: "Medical contracts: Non-emergency transportation gigs provide steady income"
+- ❌ WRONG: "Flexible driving opportunities attract users seeking side income" (no heading/colon)
+- ❌ WRONG: "Priority mode resulting in higher fare requests" (has "resulting in")
+- DO NOT use: "attracts", "resulting in", "users appreciate", "users like"
+
+**major_frustrations**: Problem area: Specific issue details (features/aspects of the product/user experiences
+users don't like or discuss in a negative light)
+- Format: "Heading: Context"
+- ✅ CORRECT: "Unfair deactivations: False passenger reports with no appeal process"
+- ✅ CORRECT: "Surge pricing: Ineffective during peak times with no earnings boost"
+- ❌ WRONG: "Confusion over payout leading to misunderstandings" (has "leading to", no colon)
+- ❌ WRONG: "Low earnings impacting driver income" (has "impacting", no heading)
+- DO NOT use: "causing", "leading to", "impacting", "frustrates users", emotional language
+
+**what_users_want**: Desired feature: Specific improvement needed (actionable insights for business)
+- Format: "Heading: Context"
+- ✅ CORRECT: "Medical ride labeling: Clear identification and hazard pay"
+- ✅ CORRECT: "Tip transparency: Reinstate feature showing passenger tipping patterns"
+- ❌ WRONG: "Clear labeling to reduce confusion" (has "to reduce", no heading)
+- ❌ WRONG: "Better safety measures to protect drivers" (has "to protect", vague)
+- DO NOT use: "to [verb]", "for [verb]ing", "is essential", "should be"
+
+DETAILED INSIGHTS:
+
+What Users Like:
+{themes_text}
+
+What Users Don't Like:
+{pain_points_text}
+
+What Users Want:
+{requests_text}
+
+Return a JSON object with this exact structure (each bullet must list 2–10 source_themes when available):
+{{
+  "what_users_like": [
+    {{"text": "Heading: context", "source_themes": ["detailed theme 1", "detailed theme 2", "detailed theme 3"]}},
+    {{"text": "Heading: context", "source_themes": ["detailed theme 4", "detailed theme 5"]}}
+  ],
+  "major_frustrations": [
+    {{"text": "Heading: context", "source_themes": ["detailed theme 1", "detailed theme 2"]}},
+    {{"text": "Heading: context", "source_themes": ["detailed theme 3", "detailed theme 4"]}}
+  ],
+  "what_users_want": [
+    {{"text": "Heading: context", "source_themes": ["detailed theme 1", "detailed theme 2"]}},
+    {{"text": "Heading: context", "source_themes": ["detailed theme 3", "detailed theme 4", "detailed theme 5"]}}
+  ]
+}}
+
+CRITICAL REQUIREMENT - source_themes (MANDATORY):
+For each summary bullet, you MUST list ALL relevant detailed insights from above in "source_themes".
+- Include between 2 and 10 items per bullet whenever at least 2 relevant detailed themes exist.
+- Copy the EXACT text of each detailed theme VERBATIM as it appears in the input lists (no paraphrasing or shortening).
+- If only 1 relevant detailed theme exists for a concept across the provided lists, include that 1 (do not fabricate). If none exist, omit the bullet.
+- Prefer grouping closely related detailed themes so that each bullet cites multiple sources.
+
+Example:
+If input has: "Driver compensation – Users express relief that DoorDash compensates drivers"
+Then source_themes MUST contain: ["Driver compensation – Users express relief that DoorDash compensates drivers"]
+NOT: ["Driver compensation"] or ["Driver pay"] or any variation
+
+CRITICAL RULES:
+- Maximum 5 bullets per category (minimum 3 if insights exist)
+- Each bullet MUST have format "Heading: Context"
+- Heading + Context must independently make sense to a college graduate
+- Each bullet MUST be exactly 9-12 words total (feel free to increase the number of words if the meaningful
+of the sentence isn't clear)
+- Group similar concepts into single bullets
+- Each bullet MUST include 2–10 items in source_themes when at least 2 relevant detailed themes exist
+- Return empty array [] if no meaningful insights exist
+- NO phrases like: "to [verb]", "causing", "leading to", "impacting", "resulting in"
+- Follow examples above EXACTLY

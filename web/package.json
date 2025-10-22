@@ -1,0 +1,20 @@
+{
+  "name": "apps-custom-ux",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/component.tsx --bundle --format=esm --target=es2020 --outfile=dist/component.js --minify"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.9",
+    "@types/react-dom": "18.3.0",
+    "esbuild": "0.24.0",
+    "typescript": "5.6.3"
+  }
+}
+
