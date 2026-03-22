@@ -1,13 +1,13 @@
 # Reddit Sentiment Analysis MCP Server
 
-An enterprise-grade Reddit sentiment analysis server with dual AI providers (OpenAI & Claude) and Model Context Protocol (MCP) integration for ChatGPT Apps and other AI platforms.
+An enterprise-grade Reddit sentiment analysis server with dual AI providers (OpenAI & Claude) and Model Context Protocol (MCP) integration for ChatGPT Apps, Dust, and other AI platforms.
 
 ## 🚀 Key Features
 
 - **Dual AI Analysis**: OpenAI GPT-4o-mini (primary) with Claude 3.5 Sonnet fallback
 - **ChatGPT Apps Integration**: Custom UI widget with interactive visualizations
 - **Smart Categorization**: AI-powered insight extraction with validation logic
-- **MCP Protocol**: Full support for ChatGPT and Copilot Studio integration
+- **MCP Protocol**: Full support for ChatGPT, Dust, and Copilot Studio integration
 - **SSE Streaming**: Real-time responses via Server-Sent Events
 - **Deduplication**: Intelligent request caching to prevent duplicate API calls
 - **50 Posts Analysis**: Fixed batch processing across multiple subreddits
@@ -38,7 +38,7 @@ An enterprise-grade Reddit sentiment analysis server with dual AI providers (Ope
 - **Request Deduplication**: Prevents duplicate analysis via hash-based caching
 - **Batch Processing**: 5 batches of 10 posts each with alignment validation
 - **SSE Transport**: Server-Sent Events for ChatGPT Apps compatibility
-- **Streamable HTTP**: Alternative transport for Copilot Studio
+- **Streamable HTTP**: Alternative transport for Dust and Copilot Studio (Bearer token auth)
 
 ## 🛠️ Installation
 
@@ -76,6 +76,7 @@ REDDIT_CLIENT_SECRET=your_reddit_client_secret
 REDDIT_USER_AGENT=RedditSentimentBot/1.0
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key  # Optional
+DUST_MCP_BEARER_TOKEN=your_bearer_token   # Optional, secures /mcp endpoint for Dust
 ```
 
 5. **Build the UI component** (for ChatGPT Apps)
@@ -104,6 +105,7 @@ Server will start on `http://0.0.0.0:8000` (or custom PORT environment variable)
 | `REDDIT_USER_AGENT` | Yes | User agent string (format: AppName/Version) |
 | `OPENAI_API_KEY` | Recommended | OpenAI API key (primary AI provider) |
 | `ANTHROPIC_API_KEY` | Optional | Anthropic API key (fallback provider) |
+| `DUST_MCP_BEARER_TOKEN` | Optional | Bearer token to secure the `/mcp` endpoint for Dust |
 | `PORT` | Optional | Server port (default: 8000) |
 
 ### Getting API Credentials
@@ -181,13 +183,33 @@ Analyze Reddit sentiment for "Uber Eats" in subreddits InstacartShoppers, gigwor
 }
 ```
 
+## Dust Integration
+
+The server exposes a Streamable HTTP MCP endpoint at `/mcp` that is compatible with [Dust](https://dust.tt).
+
+**Setup in Dust:**
+1. Add a new MCP server in your Dust workspace
+2. Set the server URL to `http://your-server:8000/mcp`
+3. If `DUST_MCP_BEARER_TOKEN` is set, configure the Authorization header as `Bearer <your_token>`
+
+**Environment variable:**
+```env
+DUST_MCP_BEARER_TOKEN=your_secret_token  # Leave empty to disable auth
+```
+
+When set, all requests to `/mcp` must include:
+```
+Authorization: Bearer your_secret_token
+```
+
 ## 🏗️ Architecture
 
 ### System Components
 
 1. **MCP Server** (`reddit_sentiment_server.py`)
    - FastAPI application with MCP protocol support
-   - SSE and HTTP transport layers
+   - SSE transport (`/sse`, `/message`) for ChatGPT Apps
+   - Streamable HTTP transport (`/mcp`) for Dust and Copilot Studio with optional Bearer token auth
    - Tool handler: `analyze_reddit_sentiment`
 
 2. **AI Analysis Pipeline**
@@ -209,15 +231,22 @@ Analyze Reddit sentiment for "Uber Eats" in subreddits InstacartShoppers, gigwor
 ### Data Flow
 
 ```
-ChatGPT Request → MCP Server → Reddit API (fetch 50 posts)
-                              ↓
-                     OpenAI GPT-4o-mini (batch analysis)
-                              ↓
-                     Validation Logic (optional)
-                              ↓
-                     Summary Generation (OpenAI)
-                              ↓
-                     Custom UI Rendering (ChatGPT Apps)
+ChatGPT / Dust Request → MCP Server → Reddit API (fetch 50 posts)
+                                              ↓
+                                   OpenAI GPT-4o-mini (batch analysis)
+                                              ↓
+                                   Validation Logic (optional)
+                                              ↓
+                                   Summary Generation (OpenAI)
+                                              ↓
+                              Custom UI Rendering (ChatGPT Apps) / JSON response (Dust)
+```
+
+**Transport routing:**
+```
+ChatGPT Apps  →  /sse + /message  (SSE transport)
+Dust          →  /mcp             (Streamable HTTP, Bearer token auth)
+Copilot       →  /mcp             (Streamable HTTP)
 ```
 
 ### AI Provider Fallback Chain
@@ -333,6 +362,7 @@ MIT License - See LICENSE file for details
 - **Reddit**: API access for sentiment data
 - **MCP Protocol**: Standard for AI tool integration
 - **ChatGPT Apps SDK**: Custom UI framework
+- **Dust**: AI agent platform with MCP tool support
 
 ---
 
