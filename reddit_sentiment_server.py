@@ -1169,6 +1169,22 @@ async def health():
     """Health check endpoint"""
     return {"status": "healthy", "mcp_server": "ready"}
 
+@app.post("/analyze")
+async def analyze_rest(request: Request):
+    """Direct REST endpoint for sentiment analysis — used by external clients (e.g. Replit app)"""
+    body = await request.json()
+    query = body.get("query", "")
+    if not query:
+        return JSONResponse(status_code=400, content={"error": "query is required"})
+    result = await perform_sentiment_analysis(
+        query,
+        body.get("subreddits", ["all"]),
+        body.get("time_filter", "all"),
+        50,
+        body.get("product_context", "")
+    )
+    return JSONResponse(content=result)
+
 @app.get("/mcp")
 async def mcp_sse_endpoint(request: Request):
     """

@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reddit Sentiment Analyzer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header svg { color: #ff4500; flex-shrink: 0; }
+    header h1 { font-size: 20px; font-weight: 700; color: #0f172a; }
+    header span { font-size: 13px; color: #64748b; margin-left: 4px; }
+
+    /* ── Main layout ── */
+    main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+    /* ── Search card ── */
+    .search-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .search-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #374151; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 12px; align-items: end; }
+    @media (max-width: 700px) { .form-row { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 12px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.4px; }
+    input, select {
+      height: 40px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 0 12px;
+      font-size: 14px;
+      background: #fff;
+      color: #1e293b;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+
+    button.analyze-btn {
+      height: 40px;
+      padding: 0 20px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    button.analyze-btn:hover { background: #1d4ed8; }
+    button.analyze-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+
+    /* ── Loading ── */
+    #loading {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 0;
+      gap: 16px;
+    }
+    #loading.visible { display: flex; }
+    #loading svg {
+      color: #f59e0b;
+      animation: pulse-glow 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.95); }
+    }
+    #loading p { font-size: 15px; color: #374151; font-weight: 500; }
+
+    /* ── Error ── */
+    #error {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 16px;
+      color: #b91c1c;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    #error.visible { display: block; }
+
+    /* ── Results ── */
+    #results { display: none; }
+    #results.visible { display: block; }
+
+    .results-header {
+      border-left: 4px solid #2563eb;
+      background: #eff6ff;
+      color: #1e3a8a;
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .results-header h2 { font-size: 18px; font-weight: 700; }
+    .results-meta { font-size: 12px; color: #3b82f6; }
+
+    .columns-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 800px) { .columns-grid { grid-template-columns: 1fr; } }
+
+    .column h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .column.positive h3 { color: #059669; border-color: #a7f3d0; }
+    .column.warning  h3 { color: #d97706; border-color: #fde68a; }
+    .column.info     h3 { color: #2563eb; border-color: #bfdbfe; }
+
+    .chips { display: flex; flex-direction: column; gap: 8px; }
+
+    .chip {
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      text-align: left;
+      background: #fff;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s;
+      line-height: 1.5;
+    }
+    .chip:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .chip.disabled { cursor: default; opacity: 0.55; }
+    .chip.disabled:hover { transform: none; box-shadow: none; }
+
+    .column.positive .chip { border: 1px solid #10b981; color: #065f46; }
+    .column.warning  .chip { border: 1px solid #f59e0b; color: #78350f; }
+    .column.info     .chip { border: 1px solid #3b82f6; color: #1e3a8a; }
+
+    .chip-heading { font-weight: 700; }
+    .column.positive .chip-heading { color: #10b981; }
+    .column.warning  .chip-heading { color: #f59e0b; }
+    .column.info     .chip-heading { color: #3b82f6; }
+
+    .chip-context { color: #374151; }
+
+    /* ── Drawer overlay ── */
+    #drawer-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 100;
+      justify-content: flex-end;
+    }
+    #drawer-overlay.visible { display: flex; }
+
+    #drawer {
+      width: min(520px, 85vw);
+      height: 100%;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid #e2e8f0;
+      flex-shrink: 0;
+    }
+    #drawer-title { font-size: 15px; font-weight: 600; color: #0f172a; }
+    #drawer-close {
+      background: none;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+      color: #64748b;
+      line-height: 1;
+      padding: 2px 6px;
+    }
+    #drawer-close:hover { color: #0f172a; }
+    #drawer-body { overflow-y: auto; padding: 16px 20px; flex: 1; }
+
+    .post-item {
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .post-item:last-child { border-bottom: none; }
+    .post-item a {
+      color: #2563eb;
+      text-decoration: none;
+      font-size: 14px;
+      line-height: 1.5;
+      display: block;
+    }
+    .post-item a:hover { text-decoration: underline; }
+    .post-item span { color: #6b7280; font-size: 14px; }
+
+    /* ── Empty state ── */
+    .empty-col {
+      color: #9ca3af;
+      font-size: 13px;
+      font-style: italic;
+      padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/>
+  </svg>
+  <h1>Reddit Sentiment Analyzer</h1>
+  <span>powered by MCP</span>
+</header>
+
+<main>
+  <div class="search-card">
+    <h2>Analyze what Reddit says about any product, brand, or topic</h2>
+    <div class="form-row">
+      <div class="field">
+        <label>Query</label>
+        <input id="query" type="text" placeholder="e.g. Notion, Figma, GPT-4..." />
+      </div>
+      <div class="field">
+        <label>Subreddits (comma-separated)</label>
+        <input id="subreddits" type="text" placeholder="all, productivity, startups" value="all" />
+      </div>
+      <div class="field">
+        <label>Time range</label>
+        <select id="time-filter">
+          <option value="all">All time</option>
+          <option value="year">Past year</option>
+          <option value="month">Past month</option>
+          <option value="week">Past week</option>
+          <option value="day">Past day</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="analyze-btn" id="analyze-btn" onclick="runAnalysis()">Analyze</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="error"></div>
+
+  <div id="loading">
+    <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 18h6"/><path d="M10 22h4"/>
+      <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>
+      <line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
+    </svg>
+    <p>Mining product insights from Reddit&hellip;</p>
+    <p style="font-size:13px;color:#9ca3af;">This typically takes 20–40 seconds</p>
+  </div>
+
+  <div id="results">
+    <div class="results-header">
+      <h2 id="results-title"></h2>
+      <span class="results-meta" id="results-meta"></span>
+    </div>
+    <div class="columns-grid">
+      <div class="column positive">
+        <h3>What Users Like</h3>
+        <div class="chips" id="col-like"></div>
+      </div>
+      <div class="column warning">
+        <h3>What Users Don't Like</h3>
+        <div class="chips" id="col-dislike"></div>
+      </div>
+      <div class="column info">
+        <h3>What Users Wish Existed</h3>
+        <div class="chips" id="col-wish"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Drawer -->
+<div id="drawer-overlay" onclick="closeDrawer()">
+  <div id="drawer" onclick="event.stopPropagation()">
+    <div id="drawer-header">
+      <span id="drawer-title">Sources</span>
+      <button id="drawer-close" onclick="closeDrawer()">&#215;</button>
+    </div>
+    <div id="drawer-body"></div>
+  </div>
+</div>
+
+<script>
+  let postsWithUrls = [];
+
+  function capitalize(s) {
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.classList.add('visible');
+  }
+
+  function clearError() {
+    const el = document.getElementById('error');
+    el.textContent = '';
+    el.classList.remove('visible');
+  }
+
+  function setLoading(on) {
+    document.getElementById('loading').classList.toggle('visible', on);
+    document.getElementById('analyze-btn').disabled = on;
+  }
+
+  function showResults(payload) {
+    postsWithUrls = payload.posts_with_urls || [];
+
+    const title = capitalize(payload.overview?.query || '');
+    document.getElementById('results-title').textContent = `${title} — Product Insights`;
+    const meta = `${payload.overview?.total_posts ?? '?'} posts · ${payload.overview?.analysis_method ?? ''}`;
+    document.getElementById('results-meta').textContent = meta;
+
+    // Prefer key_insights_summary, fall back to business_insights
+    const summary = payload.key_insights_summary;
+    const bi = payload.business_insights;
+
+    const likeItems   = summary?.what_users_like     ? summaryToItems(summary.what_users_like)     : (bi?.what_users_like          || []);
+    const dislikeItems = summary?.major_frustrations ? summaryToItems(summary.major_frustrations)  : (bi?.what_users_dont_like     || []);
+    const wishItems   = summary?.what_users_want     ? summaryToItems(summary.what_users_want)     : (bi?.what_users_wish_existed  || []);
+
+    renderChips('col-like',    likeItems,    'positive');
+    renderChips('col-dislike', dislikeItems, 'warning');
+    renderChips('col-wish',    wishItems,    'info');
+
+    document.getElementById('results').classList.add('visible');
+  }
+
+  function summaryToItems(bullets) {
+    return bullets.map(b => ({
+      theme: b.text,
+      source_indices: b.source_indices || []
+    }));
+  }
+
+  function renderChips(containerId, items, tone) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    if (!items || items.length === 0) {
+      container.innerHTML = '<p class="empty-col">No data available</p>';
+      return;
+    }
+    items.forEach(item => {
+      const label = item.theme || '';
+      const colonIdx = label.indexOf(':');
+      const heading  = colonIdx > 0 ? label.substring(0, colonIdx).trim() : label;
+      const context  = colonIdx > 0 ? label.substring(colonIdx + 1).trim() : '';
+      const hasLinks = item.source_indices && item.source_indices.length > 0;
+
+      const btn = document.createElement('button');
+      btn.className = 'chip' + (hasLinks ? '' : ' disabled');
+      btn.innerHTML = `<span class="chip-heading">${escHtml(heading)}${context ? ': ' : ''}</span>`
+                    + (context ? `<span class="chip-context">${escHtml(context)}</span>` : '');
+
+      if (hasLinks) {
+        btn.onclick = () => openDrawer(label, item.source_indices);
+      }
+      container.appendChild(btn);
+    });
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function openDrawer(theme, sourceIndices) {
+    document.getElementById('drawer-title').textContent = `Sources \u2022 ${theme}`;
+    const body = document.getElementById('drawer-body');
+    body.innerHTML = '';
+    sourceIndices.forEach(idx => {
+      const post = postsWithUrls[idx];
+      if (!post) return;
+      const div = document.createElement('div');
+      div.className = 'post-item';
+      if (post.url && post.url !== 'URL unavailable') {
+        div.innerHTML = `<a href="${escHtml(post.url)}" target="_blank" rel="noopener noreferrer">${escHtml(post.title)}</a>`;
+      } else {
+        div.innerHTML = `<span>${escHtml(post.title)}</span>`;
+      }
+      body.appendChild(div);
+    });
+    document.getElementById('drawer-overlay').classList.add('visible');
+  }
+
+  function closeDrawer() {
+    document.getElementById('drawer-overlay').classList.remove('visible');
+  }
+
+  async function runAnalysis() {
+    const query = document.getElementById('query').value.trim();
+    if (!query) { showError('Please enter a search query.'); return; }
+
+    clearError();
+    document.getElementById('results').classList.remove('visible');
+    setLoading(true);
+
+    const subredditsRaw = document.getElementById('subreddits').value.trim();
+    const subreddits = subredditsRaw
+      ? subredditsRaw.split(',').map(s => s.trim()).filter(Boolean)
+      : ['all'];
+    const timeFilter = document.getElementById('time-filter').value;
+
+    try {
+      const resp = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, subreddits, time_filter: timeFilter })
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        showError(data.error || `Server error: ${resp.status}`);
+      } else {
+        showResults(data);
+      }
+    } catch (err) {
+      showError(`Request failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Allow Enter key in query input
+  document.getElementById('query').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runAnalysis();
+  });
+</script>
+</body>
+</html>
