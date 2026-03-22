@@ -41,6 +41,7 @@ REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
 REDDIT_USER_AGENT = os.environ.get("REDDIT_USER_AGENT", "RedditSentimentBot/1.0")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+DUST_MCP_BEARER_TOKEN = os.environ.get("DUST_MCP_BEARER_TOKEN", "")
 
 # Create the REAL MCP server instance
 mcp_server = Server("reddit-sentiment-analyzer")
@@ -415,7 +416,7 @@ async def analyze_with_claude(posts: List[str], context: str, query: str = "") -
                         "content-type": "application/json"
                     },
                     json={
-                        "model": "claude-3-5-sonnet-20241022",
+                        "model": "claude-sonnet-4-6",
                         "max_tokens": MAX_TOKENS,
                         "messages": [{"role": "user", "content": prompt}]
                     }
@@ -738,7 +739,7 @@ async def create_key_insights_summary(
                         "content-type": "application/json"
                     },
                     json={
-                        "model": "claude-3-5-sonnet-20241022",
+                        "model": "claude-sonnet-4-6",
                         "max_tokens": 1000,
                         "messages": [{"role": "user", "content": prompt}]
                     }
@@ -1037,18 +1038,12 @@ async def perform_sentiment_analysis(query: str, subreddits: List[str], time_fil
                 "subreddits_searched": subreddits,
                 "analysis_method": analysis_method
             },
-            # Original fetched post texts (for backward compatibility)
-            "posts": post_texts,
-            # Post sources with titles and URLs (for drawer hyperlinks)
-            "posts_with_urls": [{"title": p["title"], "url": p["url"]} for p in posts],
-            # Detailed insights with counts and percentages (for bubble charts)
+            "key_insights_summary": key_insights_summary,
             "business_insights": {
                 "what_users_like": insights_like,
                 "what_users_dont_like": insights_dont_like,
                 "what_users_wish_existed": insights_wish_existed
             },
-            # NEW: High-level summary bullets (for Key Insights section)
-            "key_insights_summary": key_insights_summary,
             "recommendation": f"Analysis of {total} posts about {query}. Review insights for product strategy."
         }
 
@@ -1432,9 +1427,14 @@ async def mcp_message_endpoint(request: Request, mcp_session: str = Cookie(None)
 @app.post("/mcp")
 async def mcp_streamable_endpoint(request: Request):
     """
-    Streamable HTTP transport endpoint for Power Platform / Copilot Studio.
+    Streamable HTTP transport endpoint for Power Platform / Copilot Studio / Dust.
     Internally reuses the existing /message MCP logic so all tools and methods stay in sync.
     """
+    if DUST_MCP_BEARER_TOKEN:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header != f"Bearer {DUST_MCP_BEARER_TOKEN}":
+            return JSONResponse(status_code=401, content={"error": "Unauthorized"})
+
     try:
         # Parse incoming JSON-RPC request
         request_data = await request.json()
